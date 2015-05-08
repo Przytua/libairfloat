@@ -34,6 +34,7 @@
 #include "settings.h"
 #include "dacpclient.h"
 #include "raopserver.h"
+#include "webserverconnection.h"
 
 #ifndef _rsp
 typedef struct raop_session_t *raop_session_p;
