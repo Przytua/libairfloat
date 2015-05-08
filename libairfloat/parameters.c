@@ -98,7 +98,7 @@ void _parameters_parse(struct parameters_t* p, const void* data, size_t data_siz
         }
         
     }
-        
+    
 }
 
 void _parameters_parse_http_authentication(struct parameters_t* p, const void* buffer, size_t size) {
@@ -106,7 +106,7 @@ void _parameters_parse_http_authentication(struct parameters_t* p, const void* b
     _parameters_parse(p, buffer, size, ",", "=");
     
     for (uint32_t i = 0 ; i < p->parameters_count ; i++) {
-                
+        
         if (p->parameters[i].value[0] == '"' || p->parameters[i].value[0] == '\'') {
             
             p->parameters[i].value++;
@@ -158,6 +158,35 @@ size_t _parameters_write_http_header(struct parameters_t* p, void* buffer, size_
         if (i < p->parameters_count - 1) {
             if (buffer != NULL && write_pos + 2 <= buffer_size)
                 strcpy(&c_buffer[write_pos], ";");
+            write_pos++;
+        }
+    }
+    
+    if (buffer != NULL)
+        c_buffer[write_pos] = '\0';
+    
+    return write_pos + 1;
+    
+}
+
+size_t _parameters_write_text(struct parameters_t* p, void* buffer, size_t buffer_size) {
+    
+    size_t write_pos = 0;
+    bzero(buffer, buffer_size);
+    char* c_buffer = (char*)buffer;
+    
+    for (uint32_t i = 0 ; i < p->parameters_count ; i++) {
+        struct parameter_t* c_param = &p->parameters[i];
+        size_t key_len = strlen(c_param->key);
+        if (c_param->value != NULL) {
+            size_t value_len = strlen(c_param->value);
+            if (buffer != NULL && write_pos + key_len + value_len + 2 <= buffer_size)
+                sprintf(&c_buffer[write_pos], "%s: %s", c_param->key, c_param->value);
+            write_pos += key_len + value_len + 2;
+        }
+        if (i < p->parameters_count - 1) {
+            if (buffer != NULL && write_pos + 2 <= buffer_size)
+                strcpy(&c_buffer[write_pos], "\n");
             write_pos++;
         }
     }
@@ -256,7 +285,7 @@ void parameters_set_value(struct parameters_t* p, const char* key, const char* v
     vsnprintf(new_value, 100, value, args);
     
     va_end(args);
-        
+    
     size_t key_len = strlen(key);
     size_t value_len = strlen(new_value);
     
@@ -297,6 +326,9 @@ size_t parameters_write(struct parameters_t* p, void* buffer, size_t buffer_size
     switch (type) {
         case parameters_type_http_header:
             return _parameters_write_http_header(p, buffer, buffer_size);
+            break;
+        case parameters_type_text:
+            return _parameters_write_text(p, buffer, buffer_size);
             break;
         default:
             assert("Write out of type is not implemented");
