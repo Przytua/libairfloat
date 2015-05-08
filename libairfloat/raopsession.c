@@ -63,6 +63,8 @@
 
 #include "raopsession.h"
 
+#include "fairplay.h"
+
 #define MAX(x,y) (x > y ? x : y)
 
 void raop_server_session_ended(raop_server_p rs, struct raop_session_t* session);
@@ -279,14 +281,22 @@ void _raop_session_raop_connection_request_callback(web_server_connection_p conn
         size_t content_length;
         if ((content_length = web_request_get_content(request, NULL, 0)) > 0) {
             
+            uint8_t content[content_length];
+            web_request_get_content(request, content, content_length);
+            
+            int i;
+            for (i = 0; i < content_length; i++)
+            {
+                if (i > 0) printf(":");
+                printf("%02X", content[i]);
+            }
+            printf("\n\n");
+            
             const char* content_type = web_headers_value(request_headers, "Content-Type");
             
             if (strcmp(content_type, "application/sdp") == 0 || strcmp(content_type, "text/parameters") == 0) {
                 
-                char* content[content_length];
-                
-                web_request_get_content(request, content, content_length);
-                
+                printf("%s\n\n", (char*)content);
                 content_length = web_tools_convert_new_lines(content, content_length);
                 
                 if (strcmp(content_type, "application/sdp") == 0)
@@ -312,6 +322,7 @@ void _raop_session_raop_connection_request_callback(web_server_connection_p conn
         mutex_unlock(rs->mutex);
         
         web_headers_set_value(response_headers, "Server", "AirTunes/105.1");
+        c_seq = atoi(web_headers_value(request_headers, "CSeq"));
         web_headers_set_value(response_headers, "CSeq", "%d", c_seq);
         
         if (_raop_session_check_authentication(rs, cmd, path, web_headers_value(request_headers, "Authorization"))) {
@@ -333,6 +344,12 @@ void _raop_session_raop_connection_request_callback(web_server_connection_p conn
                 
                 const char* codec = NULL;
                 uint32_t codec_identifier;
+                
+                const char* ip = NULL;
+                const char* c;
+                if ((c = parameters_value_for_key(parameters, "c")) != NULL) {
+                    ip = &c[7];
+                }
                 
                 const char* rtpmap;
                 if ((rtpmap = parameters_value_for_key(parameters, "a-rtpmap")) != NULL) {
@@ -357,7 +374,8 @@ void _raop_session_raop_connection_request_callback(web_server_connection_p conn
                         mutex_unlock(rs->mutex);
                         
                         const char* aes_key_base64_encrypted;
-                        if ((aes_key_base64_encrypted = parameters_value_for_key(parameters, "a-rsaaeskey")) != NULL) {
+                        printf("%s", aes_key_base64_encrypted);
+                        if ((aes_key_base64_encrypted = parameters_value_for_key(parameters, "a-rsaaeskey"))) {
                             
                             size_t aes_key_base64_encrypted_padded_length = strlen(aes_key_base64_encrypted) + 5;
                             char aes_key_base64_encrypted_padded[aes_key_base64_encrypted_padded_length];
@@ -467,6 +485,28 @@ void _raop_session_raop_connection_request_callback(web_server_connection_p conn
                 } else
                     web_response_set_status(response, 400, "Bad Request");
                 
+            } else if (0 == strcmp(cmd, "GET_PARAMETER") && rtp_session != NULL) {
+                
+                if (parameters != NULL) {
+                    
+                    int parameters_count = parameters_get_count(parameters);
+                    
+                    for (int i = 0; i < parameters_count; ++i) {
+                        const char* key = parameters_key_at_index(parameters, i);
+                        if (0 == strcmp(key, "volume")) {
+                            parameters_set_value(parameters, "volume", "0.0");
+//                          float volume_p = MAX(pow(10.0, 0.05 * volume_db), 0.0);
+                        } else {
+                            parameters_set_value(parameters, key, "NULL");
+                        }
+                    }
+                    
+                }
+                web_headers_set_value(response_headers, "Content-Type", "text/parameters");
+                uint8_t buffer[100] = {0};
+                int body_size = parameters_write(parameters, buffer, 100, parameters_type_text);
+                web_response_set_content(response, buffer, body_size);
+                
             } else if (0 == strcmp(cmd, "SET_PARAMETER") && rtp_session != NULL) {
                 
                 if (parameters != NULL) {
@@ -565,6 +605,82 @@ void _raop_session_raop_connection_request_callback(web_server_connection_p conn
                 
                 keep_alive = false;
                 
+            } else if (0 == strcmp(cmd, "POST") && 0 == strcmp(path, "/fp-setup") ) {
+                
+                int content_length = atoi(web_headers_value(request_headers, "Content-Length"));
+                uint8_t content[164] = {0};
+                web_request_get_content(request, content, content_length);
+                
+                // 2 1 1 -> 4 : 02 00 02 bb
+                uint8_t fply_1[] __attribute__((unused)) = {
+                    0x46, 0x50, 0x4c, 0x59, 0x02, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x04, 0x02, 0x00, 0x02, 0xbb
+                };
+                
+                // 2 1 2 -> 130 : 02 02 xxx
+                uint8_t fply_2[] = {
+                    0x46, 0x50, 0x4c, 0x59, 0x02, 0x01, 0x02, 0x00, 0x00, 0x00, 0x00, 0x82,
+                    0x02, 0x02, 0x2f, 0x7b, 0x69, 0xe6, 0xb2, 0x7e, 0xbb, 0xf0, 0x68, 0x5f, 0x98, 0x54, 0x7f, 0x37,
+                    0xce, 0xcf, 0x87, 0x06, 0x99, 0x6e, 0x7e, 0x6b, 0x0f, 0xb2, 0xfa, 0x71, 0x20, 0x53, 0xe3, 0x94,
+                    0x83, 0xda, 0x22, 0xc7, 0x83, 0xa0, 0x72, 0x40, 0x4d, 0xdd, 0x41, 0xaa, 0x3d, 0x4c, 0x6e, 0x30,
+                    0x22, 0x55, 0xaa, 0xa2, 0xda, 0x1e, 0xb4, 0x77, 0x83, 0x8c, 0x79, 0xd5, 0x65, 0x17, 0xc3, 0xfa,
+                    0x01, 0x54, 0x33, 0x9e, 0xe3, 0x82, 0x9f, 0x30, 0xf0, 0xa4, 0x8f, 0x76, 0xdf, 0x77, 0x11, 0x7e,
+                    0x56, 0x9e, 0xf3, 0x95, 0xe8, 0xe2, 0x13, 0xb3, 0x1e, 0xb6, 0x70, 0xec, 0x5a, 0x8a, 0xf2, 0x6a,
+                    0xfc, 0xbc, 0x89, 0x31, 0xe6, 0x7e, 0xe8, 0xb9, 0xc5, 0xf2, 0xc7, 0x1d, 0x78, 0xf3, 0xef, 0x8d,
+                    0x61, 0xf7, 0x3b, 0xcc, 0x17, 0xc3, 0x40, 0x23, 0x52, 0x4a, 0x8b, 0x9c, 0xb1, 0x75, 0x05, 0x66,
+                    0xe6, 0xb3
+                };
+                
+                // 2 1 3 -> 152
+                // 4 : 02 8f 1a 9c
+                // 128 : xxx
+                // 20 : 5b ed 04 ed c3 cd 5f e6 a8 28 90 3b 42 58 15 cb 74 7d ee 85
+                
+                uint8_t fply_3[] __attribute__((unused)) = {
+                    0x46, 0x50, 0x4c, 0x59, 0x02, 0x01, 0x03, 0x00, 0x00, 0x00, 0x00, 0x98, 0x02, 0x8f,
+                    0x1a, 0x9c, 0x6e, 0x73, 0xd2, 0xfa, 0x62, 0xb2, 0xb2, 0x07, 0x6f, 0x52, 0x5f, 0xe5, 0x72, 0xa5,
+                    0xac, 0x4d, 0x19, 0xb4, 0x7c, 0xd8, 0x07, 0x1e, 0xdb, 0xbc, 0x98, 0xae, 0x7e, 0x4b, 0xb4, 0xb7,
+                    0x2a, 0x7b, 0x5e, 0x2b, 0x8a, 0xde, 0x94, 0x4b, 0x1d, 0x59, 0xdf, 0x46, 0x45, 0xa3, 0xeb, 0xe2,
+                    0x6d, 0xa2, 0x83, 0xf5, 0x06, 0x53, 0x8f, 0x76, 0xe7, 0xd3, 0x68, 0x3c, 0xeb, 0x1f, 0x80, 0x0e,
+                    0x68, 0x9e, 0x27, 0xfc, 0x47, 0xbe, 0x3d, 0x8f, 0x73, 0xaf, 0xa1, 0x64, 0x39, 0xf7, 0xa8, 0xf7,
+                    0xc2, 0xc8, 0xb0, 0x20, 0x0c, 0x85, 0xd6, 0xae, 0xb7, 0xb2, 0xd4, 0x25, 0x96, 0x77, 0x91, 0xf8,
+                    0x83, 0x68, 0x10, 0xa1, 0xa9, 0x15, 0x4a, 0xa3, 0x37, 0x8c, 0xb7, 0xb9, 0x89, 0xbf, 0x86, 0x6e,
+                    0xfb, 0x95, 0x41, 0xff, 0x03, 0x57, 0x61, 0x05, 0x00, 0x73, 0xcc, 0x06, 0x7e, 0x4f, 0xc7, 0x96,
+                    0xae, 0xba, 0x5b, 0xed, 0x04, 0xed, 0xc3, 0xcd, 0x5f, 0xe6, 0xa8, 0x28, 0x90, 0x3b, 0x42, 0x58,
+                    0x15, 0xcb, 0x74, 0x7d, 0xee, 0x85
+                };
+                
+                // 2 1 4 -> 20 : 5b ed 04 ed c3 cd 5f e6 a8 28 90 3b 42 58 15 cb 74 7d ee 85
+                uint8_t fply_4[] = {
+                    0x46, 0x50, 0x4c, 0x59, 0x02, 0x01, 0x04, 0x00, 0x00, 0x00, 0x00, 0x14, 0x5b,
+                    0xed, 0x04, 0xed, 0xc3, 0xcd, 0x5f, 0xe6, 0xa8, 0x28, 0x90, 0x3b, 0x42, 0x58, 0x15, 0xcb, 0x74,
+                    0x7d, 0xee, 0x85
+                };
+                
+                //		NSLog(@" content:%@", content);
+                
+                uint8_t fply_header[12] = {0};
+                memcpy(fply_header, content, 12);
+                
+                int payload_size = content_length - 12;
+                uint8_t payload[152] = {0};
+                memcpy(payload, content + 12, payload_size);
+                
+                if (fply_header[6] == 1) {
+                    uint8_t data[142] = {0};
+                    memcpy(data, fply_2, 142);
+                    memcpy(data + 4, fply_header + 4, 1);
+                    memcpy(data + 13, payload + 2, 1);
+                    web_response_set_content(response, data, 142);
+                } else if (fply_header[6] == 3) {
+                    int payload_offset = (payload_size - 20);
+                    uint8_t data[32] = {0};
+                    memcpy(data, fply_4, 12);
+                    memcpy(data + 4, fply_header + 4, 1);
+                    memcpy(data + 12, payload + payload_offset, 20);
+                    web_response_set_content(response, data, 32);
+                }
+                int et = atoi(web_headers_value(request_headers, "X-Apple-ET"));
+                web_headers_set_value(response_headers, "X-Apple-ET", "%d", et);
             } else
                 web_response_set_status(response, 400, "Bad Request");
             
@@ -737,7 +853,7 @@ void raop_session_stop(struct raop_session_t* rs) {
     
     if (stopped)
         raop_server_session_ended(rs->server, rs);
-        
+    
 }
 
 void raop_session_set_client_initiated_callback(struct raop_session_t* rs, raop_session_client_initiated_callback callback, void* ctx) {
