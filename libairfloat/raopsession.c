@@ -399,6 +399,74 @@ void _raop_session_raop_connection_request_callback(web_server_connection_p conn
                             rs->crypt_aes = crypt_aes_create(aes_key, aes_initializer, size);
                             mutex_unlock(rs->mutex);
                             
+                        } else if ((aes_key_base64_encrypted = parameters_value_for_key(parameters, "a-fpaeskey")) != NULL) {
+                            
+                            
+                            size_t aes_key_base64_encrypted_padded_length = strlen(aes_key_base64_encrypted) + 5;
+                            char aes_key_base64_encrypted_padded[aes_key_base64_encrypted_padded_length];
+                            size_t size = base64_pad(aes_key_base64_encrypted, strlen(aes_key_base64_encrypted), aes_key_base64_encrypted_padded, aes_key_base64_encrypted_padded_length);
+                            
+                            if (size >= 72) {
+                                unsigned char aes_key_encrypted[72] = {0};
+                                size = base64_decode(aes_key_base64_encrypted_padded, aes_key_encrypted);
+                                
+    //                            char aes_key_encrypted[strlen(aes_key_base64_encrypted)];
+    //                            size_t size = base64_decode(aes_key_base64_encrypted, aes_key_encrypted);
+                                
+                                unsigned char aes_key[size + 1];
+                                
+                                if (aes_key_encrypted && size == 72) {
+                                    
+                                    printf("aes decoded: %s\n\n", (char *)aes_key_encrypted);
+                                    int aeskeylen;
+                                    unsigned char *p = fairplay_query(3, aes_key_encrypted, size, &aeskeylen, ip);
+                                    if (aeskeylen == 16) {
+                                        memcpy(aes_key, p, aeskeylen);
+                                    }
+                                    
+                                    log_message(LOG_INFO, "AES key length: %d bits", size * 8);
+                                    
+                                    const char* aes_initializer_base64 = parameters_value_for_key(parameters, "a-aesiv");
+                                    size_t aes_initializer_base64_encoded_padded_length = strlen(aes_initializer_base64) + 5;
+                                    char aes_initializer_base64_encoded_padded[aes_initializer_base64_encoded_padded_length];
+                                    size = base64_pad(aes_initializer_base64, strlen(aes_initializer_base64), aes_initializer_base64_encoded_padded, aes_initializer_base64_encoded_padded_length);
+                                    char aes_initializer[size];
+                                    size = base64_decode(aes_initializer_base64_encoded_padded, aes_initializer);
+                                    
+                                    mutex_lock(rs->mutex);
+                                    rs->crypt_aes = crypt_aes_create(aes_key, aes_initializer, size);
+                                    mutex_unlock(rs->mutex);
+                                    
+//                                    uint8_t fply_header[12] = {0};
+//                                    memcpy(fply_header, aes_key_encrypted, 12);
+//                                    
+//                                    int payload_size = size - 12;
+//                                    uint8_t payload[60] = {0};
+//                                    memcpy(payload, aes_key_encrypted + 12, payload_size);
+
+                                    
+//                                    if (fply_header[6] == 1) {
+//                                        uint8_t data[142] = {0};
+//                                        memcpy(data, fply_2, 142);
+//                                        memcpy(data + 4, fply_header + 4, 1);
+//                                        memcpy(data + 13, payload + 2, 1);
+//                                        web_response_set_content(response, data, 142);
+//                                    } else if (fply_header[6] == 3) {
+//                                        int payload_offset = (payload_size - 20);
+//                                        uint8_t data[32] = {0};
+//                                        memcpy(data, fply_4, 12);
+//                                        memcpy(data + 4, fply_header + 4, 1);
+//                                        memcpy(data + 12, payload + payload_offset, 20);
+//                                        web_response_set_content(response, data, 32);
+//                                    }
+                                    
+                                } else {
+                                    printf("aes base64 decode fail len=%zu\n\n", size);
+                                }
+                            } else {
+                                printf("aes base64 pad fail len=%zu\n\n", size);
+                            }
+                            
                         }
                         
                     } else
