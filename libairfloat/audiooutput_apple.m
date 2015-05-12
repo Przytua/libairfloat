@@ -121,7 +121,7 @@ OSStatus _audio_unit_render_callback(void *inRefCon, AudioUnitRenderActionFlags 
     
 }
 
-struct audio_output_t* audio_output_create(struct decoder_output_format_t decoder_output_format) {
+struct audio_output_t* audio_output_create(struct decoder_output_format_t decoder_output_format, enum decoder_type type) {
     
     struct audio_output_t* ao = (struct audio_output_t*)malloc(sizeof(struct audio_output_t));
     bzero(ao, sizeof(struct audio_output_t));
@@ -199,7 +199,9 @@ struct audio_output_t* audio_output_create(struct decoder_output_format_t decode
     } else
         _audio_output_connect_unit(ao, mixer_node, 0, output_node, 0);
     
-    ca_assert(AUGraphInitialize(ao->graph));
+    if (type == decoder_type_alac) {
+        ca_assert(AUGraphInitialize(ao->graph));
+    }
     ca_assert(AUGraphUpdate(ao->graph, NULL));
     
     return ao;

@@ -63,7 +63,8 @@
 
 #include "raopsession.h"
 
-#include "fairplay.h"
+#include "print_data.h"
+#include "airtunesd_wrapper.h"
 
 #define MAX(x,y) (x > y ? x : y)
 
@@ -85,6 +86,7 @@ struct raop_session_t {
     dacp_client_p dacp_client;
     char* user_agent;
     crypt_aes_p crypt_aes;
+    bool disable_audio;
     decoder_p decoder;
     struct raop_rtp_session_t* rtp_session;
     uint32_t rtp_last_session_id;
@@ -284,13 +286,7 @@ void _raop_session_raop_connection_request_callback(web_server_connection_p conn
             uint8_t content[content_length];
             web_request_get_content(request, content, content_length);
             
-            int i;
-            for (i = 0; i < content_length; i++)
-            {
-                if (i > 0) printf(":");
-                printf("%02X", content[i]);
-            }
-            printf("\n\n");
+            _print_data(content, content_length);
             
             const char* content_type = web_headers_value(request_headers, "Content-Type");
             
@@ -370,11 +366,14 @@ void _raop_session_raop_connection_request_callback(web_server_connection_p conn
                         rtp_fmtp++;
                         
                         mutex_lock(rs->mutex);
+                        if (strcmp(codec, "AppleLossless") != 0) {
+                            rs->disable_audio = true;
+                        }
                         rs->decoder = decoder_create(codec, rtp_fmtp);
                         mutex_unlock(rs->mutex);
                         
+                        void* key;
                         const char* aes_key_base64_encrypted;
-                        printf("%s", aes_key_base64_encrypted);
                         if ((aes_key_base64_encrypted = parameters_value_for_key(parameters, "a-rsaaeskey"))) {
                             
                             size_t aes_key_base64_encrypted_padded_length = strlen(aes_key_base64_encrypted) + 5;
@@ -387,86 +386,44 @@ void _raop_session_raop_connection_request_callback(web_server_connection_p conn
                             size = crypt_apple_private_decrypt(aes_key_encryptet, size, aes_key, size);
                             
                             log_message(LOG_INFO, "AES key length: %d bits", size * 8);
-                            
-                            const char* aes_initializer_base64 = parameters_value_for_key(parameters, "a-aesiv");
-                            size_t aes_initializer_base64_encoded_padded_length = strlen(aes_initializer_base64) + 5;
-                            char aes_initializer_base64_encoded_padded[aes_initializer_base64_encoded_padded_length];
-                            size = base64_pad(aes_initializer_base64, strlen(aes_initializer_base64), aes_initializer_base64_encoded_padded, aes_initializer_base64_encoded_padded_length);
-                            char aes_initializer[size];
-                            size = base64_decode(aes_initializer_base64_encoded_padded, aes_initializer);
-                            
-                            mutex_lock(rs->mutex);
-                            rs->crypt_aes = crypt_aes_create(aes_key, aes_initializer, size);
-                            mutex_unlock(rs->mutex);
+                            key = aes_key;
                             
                         } else if ((aes_key_base64_encrypted = parameters_value_for_key(parameters, "a-fpaeskey")) != NULL) {
-                            
                             
                             size_t aes_key_base64_encrypted_padded_length = strlen(aes_key_base64_encrypted) + 5;
                             char aes_key_base64_encrypted_padded[aes_key_base64_encrypted_padded_length];
                             size_t size = base64_pad(aes_key_base64_encrypted, strlen(aes_key_base64_encrypted), aes_key_base64_encrypted_padded, aes_key_base64_encrypted_padded_length);
                             
-                            if (size >= 72) {
+                            if (size == 72) {
                                 unsigned char aes_key_encrypted[72] = {0};
                                 size = base64_decode(aes_key_base64_encrypted_padded, aes_key_encrypted);
                                 
-    //                            char aes_key_encrypted[strlen(aes_key_base64_encrypted)];
-    //                            size_t size = base64_decode(aes_key_base64_encrypted, aes_key_encrypted);
-                                
-                                unsigned char aes_key[size + 1];
+                                uint8_t *aes_key;
                                 
                                 if (aes_key_encrypted && size == 72) {
                                     
-                                    printf("aes decoded: %s\n\n", (char *)aes_key_encrypted);
-                                    int aeskeylen;
-                                    unsigned char *p = fairplay_query(3, aes_key_encrypted, size, &aeskeylen, ip);
-                                    if (aeskeylen == 16) {
-                                        memcpy(aes_key, p, aeskeylen);
-                                    }
+                                    aes_key = decryptAESKey(aes_key_encrypted);
                                     
                                     log_message(LOG_INFO, "AES key length: %d bits", size * 8);
+                                    _print_data(aes_key, 16);
                                     
-                                    const char* aes_initializer_base64 = parameters_value_for_key(parameters, "a-aesiv");
-                                    size_t aes_initializer_base64_encoded_padded_length = strlen(aes_initializer_base64) + 5;
-                                    char aes_initializer_base64_encoded_padded[aes_initializer_base64_encoded_padded_length];
-                                    size = base64_pad(aes_initializer_base64, strlen(aes_initializer_base64), aes_initializer_base64_encoded_padded, aes_initializer_base64_encoded_padded_length);
-                                    char aes_initializer[size];
-                                    size = base64_decode(aes_initializer_base64_encoded_padded, aes_initializer);
+                                    key = aes_key;
                                     
-                                    mutex_lock(rs->mutex);
-                                    rs->crypt_aes = crypt_aes_create(aes_key, aes_initializer, size);
-                                    mutex_unlock(rs->mutex);
-                                    
-//                                    uint8_t fply_header[12] = {0};
-//                                    memcpy(fply_header, aes_key_encrypted, 12);
-//                                    
-//                                    int payload_size = size - 12;
-//                                    uint8_t payload[60] = {0};
-//                                    memcpy(payload, aes_key_encrypted + 12, payload_size);
-
-                                    
-//                                    if (fply_header[6] == 1) {
-//                                        uint8_t data[142] = {0};
-//                                        memcpy(data, fply_2, 142);
-//                                        memcpy(data + 4, fply_header + 4, 1);
-//                                        memcpy(data + 13, payload + 2, 1);
-//                                        web_response_set_content(response, data, 142);
-//                                    } else if (fply_header[6] == 3) {
-//                                        int payload_offset = (payload_size - 20);
-//                                        uint8_t data[32] = {0};
-//                                        memcpy(data, fply_4, 12);
-//                                        memcpy(data + 4, fply_header + 4, 1);
-//                                        memcpy(data + 12, payload + payload_offset, 20);
-//                                        web_response_set_content(response, data, 32);
-//                                    }
-                                    
-                                } else {
-                                    printf("aes base64 decode fail len=%zu\n\n", size);
                                 }
-                            } else {
-                                printf("aes base64 pad fail len=%zu\n\n", size);
                             }
                             
+                        }
+                        if (key != NULL) {
+                            const char* aes_initializer_base64 = parameters_value_for_key(parameters, "a-aesiv");
+                            size_t aes_initializer_base64_encoded_padded_length = strlen(aes_initializer_base64) + 5;
+                            char aes_initializer_base64_encoded_padded[aes_initializer_base64_encoded_padded_length];
+                            size_t size = base64_pad(aes_initializer_base64, strlen(aes_initializer_base64), aes_initializer_base64_encoded_padded, aes_initializer_base64_encoded_padded_length);
+                            char aes_initializer[size];
+                            size = base64_decode(aes_initializer_base64_encoded_padded, aes_initializer);
+                            
+                            mutex_lock(rs->mutex);
+                            rs->crypt_aes = crypt_aes_create(key, aes_initializer, size);
+                            mutex_unlock(rs->mutex);
                         }
                         
                     } else
@@ -503,7 +460,7 @@ void _raop_session_raop_connection_request_callback(web_server_connection_p conn
                         
                         struct sockaddr* local_end_point = web_server_connection_get_local_end_point(rs->raop_connection);
                         struct sockaddr* remote_end_point = web_server_connection_get_remote_end_point(rs->raop_connection);
-                        rtp_recorder_p new_recorder = rtp_recorder_create(rs->crypt_aes, audio_queue, local_end_point, remote_end_point, control_port, timing_port);
+                        rtp_recorder_p new_recorder = rtp_recorder_create(rs->crypt_aes, rs->disable_audio, audio_queue, local_end_point, remote_end_point, control_port, timing_port);
                         
                         uint32_t session_id = ++rs->rtp_last_session_id;
                         rs->rtp_session = (struct raop_rtp_session_t*)malloc(sizeof(struct raop_rtp_session_t));
@@ -679,74 +636,17 @@ void _raop_session_raop_connection_request_callback(web_server_connection_p conn
                 uint8_t content[164] = {0};
                 web_request_get_content(request, content, content_length);
                 
-                // 2 1 1 -> 4 : 02 00 02 bb
-                uint8_t fply_1[] __attribute__((unused)) = {
-                    0x46, 0x50, 0x4c, 0x59, 0x02, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x04, 0x02, 0x00, 0x02, 0xbb
-                };
-                
-                // 2 1 2 -> 130 : 02 02 xxx
-                uint8_t fply_2[] = {
-                    0x46, 0x50, 0x4c, 0x59, 0x02, 0x01, 0x02, 0x00, 0x00, 0x00, 0x00, 0x82,
-                    0x02, 0x02, 0x2f, 0x7b, 0x69, 0xe6, 0xb2, 0x7e, 0xbb, 0xf0, 0x68, 0x5f, 0x98, 0x54, 0x7f, 0x37,
-                    0xce, 0xcf, 0x87, 0x06, 0x99, 0x6e, 0x7e, 0x6b, 0x0f, 0xb2, 0xfa, 0x71, 0x20, 0x53, 0xe3, 0x94,
-                    0x83, 0xda, 0x22, 0xc7, 0x83, 0xa0, 0x72, 0x40, 0x4d, 0xdd, 0x41, 0xaa, 0x3d, 0x4c, 0x6e, 0x30,
-                    0x22, 0x55, 0xaa, 0xa2, 0xda, 0x1e, 0xb4, 0x77, 0x83, 0x8c, 0x79, 0xd5, 0x65, 0x17, 0xc3, 0xfa,
-                    0x01, 0x54, 0x33, 0x9e, 0xe3, 0x82, 0x9f, 0x30, 0xf0, 0xa4, 0x8f, 0x76, 0xdf, 0x77, 0x11, 0x7e,
-                    0x56, 0x9e, 0xf3, 0x95, 0xe8, 0xe2, 0x13, 0xb3, 0x1e, 0xb6, 0x70, 0xec, 0x5a, 0x8a, 0xf2, 0x6a,
-                    0xfc, 0xbc, 0x89, 0x31, 0xe6, 0x7e, 0xe8, 0xb9, 0xc5, 0xf2, 0xc7, 0x1d, 0x78, 0xf3, 0xef, 0x8d,
-                    0x61, 0xf7, 0x3b, 0xcc, 0x17, 0xc3, 0x40, 0x23, 0x52, 0x4a, 0x8b, 0x9c, 0xb1, 0x75, 0x05, 0x66,
-                    0xe6, 0xb3
-                };
-                
-                // 2 1 3 -> 152
-                // 4 : 02 8f 1a 9c
-                // 128 : xxx
-                // 20 : 5b ed 04 ed c3 cd 5f e6 a8 28 90 3b 42 58 15 cb 74 7d ee 85
-                
-                uint8_t fply_3[] __attribute__((unused)) = {
-                    0x46, 0x50, 0x4c, 0x59, 0x02, 0x01, 0x03, 0x00, 0x00, 0x00, 0x00, 0x98, 0x02, 0x8f,
-                    0x1a, 0x9c, 0x6e, 0x73, 0xd2, 0xfa, 0x62, 0xb2, 0xb2, 0x07, 0x6f, 0x52, 0x5f, 0xe5, 0x72, 0xa5,
-                    0xac, 0x4d, 0x19, 0xb4, 0x7c, 0xd8, 0x07, 0x1e, 0xdb, 0xbc, 0x98, 0xae, 0x7e, 0x4b, 0xb4, 0xb7,
-                    0x2a, 0x7b, 0x5e, 0x2b, 0x8a, 0xde, 0x94, 0x4b, 0x1d, 0x59, 0xdf, 0x46, 0x45, 0xa3, 0xeb, 0xe2,
-                    0x6d, 0xa2, 0x83, 0xf5, 0x06, 0x53, 0x8f, 0x76, 0xe7, 0xd3, 0x68, 0x3c, 0xeb, 0x1f, 0x80, 0x0e,
-                    0x68, 0x9e, 0x27, 0xfc, 0x47, 0xbe, 0x3d, 0x8f, 0x73, 0xaf, 0xa1, 0x64, 0x39, 0xf7, 0xa8, 0xf7,
-                    0xc2, 0xc8, 0xb0, 0x20, 0x0c, 0x85, 0xd6, 0xae, 0xb7, 0xb2, 0xd4, 0x25, 0x96, 0x77, 0x91, 0xf8,
-                    0x83, 0x68, 0x10, 0xa1, 0xa9, 0x15, 0x4a, 0xa3, 0x37, 0x8c, 0xb7, 0xb9, 0x89, 0xbf, 0x86, 0x6e,
-                    0xfb, 0x95, 0x41, 0xff, 0x03, 0x57, 0x61, 0x05, 0x00, 0x73, 0xcc, 0x06, 0x7e, 0x4f, 0xc7, 0x96,
-                    0xae, 0xba, 0x5b, 0xed, 0x04, 0xed, 0xc3, 0xcd, 0x5f, 0xe6, 0xa8, 0x28, 0x90, 0x3b, 0x42, 0x58,
-                    0x15, 0xcb, 0x74, 0x7d, 0xee, 0x85
-                };
-                
-                // 2 1 4 -> 20 : 5b ed 04 ed c3 cd 5f e6 a8 28 90 3b 42 58 15 cb 74 7d ee 85
-                uint8_t fply_4[] = {
-                    0x46, 0x50, 0x4c, 0x59, 0x02, 0x01, 0x04, 0x00, 0x00, 0x00, 0x00, 0x14, 0x5b,
-                    0xed, 0x04, 0xed, 0xc3, 0xcd, 0x5f, 0xe6, 0xa8, 0x28, 0x90, 0x3b, 0x42, 0x58, 0x15, 0xcb, 0x74,
-                    0x7d, 0xee, 0x85
-                };
-                
-                //		NSLog(@" content:%@", content);
-                
                 uint8_t fply_header[12] = {0};
                 memcpy(fply_header, content, 12);
                 
-                int payload_size = content_length - 12;
-                uint8_t payload[152] = {0};
-                memcpy(payload, content + 12, payload_size);
+                uint8_t *response_data;
+                response_data = getChallengeResponse(content);
                 
-                if (fply_header[6] == 1) {
-                    uint8_t data[142] = {0};
-                    memcpy(data, fply_2, 142);
-                    memcpy(data + 4, fply_header + 4, 1);
-                    memcpy(data + 13, payload + 2, 1);
-                    web_response_set_content(response, data, 142);
-                } else if (fply_header[6] == 3) {
-                    int payload_offset = (payload_size - 20);
-                    uint8_t data[32] = {0};
-                    memcpy(data, fply_4, 12);
-                    memcpy(data + 4, fply_header + 4, 1);
-                    memcpy(data + 12, payload + payload_offset, 20);
-                    web_response_set_content(response, data, 32);
-                }
+                int response_length = ((fply_header[6] == 1) ? 142 : 32);
+                
+                _print_data(response_data, response_length);
+                
+                web_response_set_content(response, response_data, response_length);
                 int et = atoi(web_headers_value(request_headers, "X-Apple-ET"));
                 web_headers_set_value(response_headers, "X-Apple-ET", "%d", et);
             } else

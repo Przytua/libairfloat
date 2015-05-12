@@ -32,6 +32,7 @@
 #define _decoder_h
 
 #include <stdint.h>
+#include "mutex.h"
 
 struct decoder_output_format_t {
     uint32_t frames_per_packet;
@@ -39,6 +40,20 @@ struct decoder_output_format_t {
     uint8_t channels;
     uint8_t bit_depth;
     uint32_t frame_size;
+};
+
+enum decoder_type {
+    decoder_type_unknown = 0,
+    decoder_type_pcm,
+    decoder_type_alac,
+    decoder_type_aac,
+    decoder_type_aac_eld,
+};
+
+struct decoder_t {
+    enum decoder_type type;
+    mutex_p mutex;
+    void* data;
 };
 
 typedef struct decoder_t *decoder_p;

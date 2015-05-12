@@ -148,6 +148,7 @@ struct rtp_packet_t _rtp_header_read(const void* buffer, size_t size) {
 
 struct rtp_recorder_t {
     crypt_aes_p crypt;
+    bool disable_audio;
     audio_queue_p audio_queue;
     mutex_p timer_mutex;
     condition_p timer_cond;
@@ -262,6 +263,10 @@ void _rtp_recorder_process_audio_packet(struct rtp_recorder_t* rr, struct rtp_pa
     size_t len = packet->packet_data_size - 8;
     
     char* decoded_audio_data = (char*)malloc(len);
+    
+    if (rr->disable_audio) {
+        return;
+    }
     
     if (rr->crypt != NULL)
         len = crypt_aes_decrypt(rr->crypt, packet_audio_data, len, decoded_audio_data, len);
@@ -379,12 +384,13 @@ rtp_socket_p _rtp_recorder_create_socket(struct rtp_recorder_t* rr, const char* 
     
 }
 
-struct rtp_recorder_t* rtp_recorder_create(crypt_aes_p crypt, audio_queue_p audio_queue, struct sockaddr* local_end_point, struct sockaddr* remote_end_point, uint16_t remote_control_port, uint16_t remote_timing_port) {
+struct rtp_recorder_t* rtp_recorder_create(crypt_aes_p crypt, bool disable_audio, audio_queue_p audio_queue, struct sockaddr* local_end_point, struct sockaddr* remote_end_point, uint16_t remote_control_port, uint16_t remote_timing_port) {
     
     struct rtp_recorder_t* rr = (struct rtp_recorder_t*)malloc(sizeof(struct rtp_recorder_t));
     bzero(rr, sizeof(struct rtp_recorder_t));
     
     rr->crypt = crypt;
+    rr->disable_audio = disable_audio;
     rr->audio_queue = audio_queue;
     
     rr->timer_mutex = mutex_create();

@@ -33,19 +33,7 @@
 #include <string.h>
 #include <assert.h>
 
-#include "mutex.h"
 #include "decoder_alac.h"
-
-enum decoder_type {
-    decoder_type_unknown = 0,
-    decoder_type_alac
-};
-
-struct decoder_t {
-    enum decoder_type type;
-    mutex_p mutex;
-    void* data;
-};
 
 struct decoder_t* decoder_create(const char* type, const char* rtp_fmtp) {
     
@@ -61,6 +49,8 @@ struct decoder_t* decoder_create(const char* type, const char* rtp_fmtp) {
         d->type = decoder_type_alac;
         d->data = decoder_alac_create(rtp_fmtp);
         
+    } else if (strcmp(rtp_fmtp, "AAC-eld") > 0) {
+        d->type = decoder_type_aac_eld;
     }
     
     return d;

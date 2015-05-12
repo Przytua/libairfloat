@@ -54,7 +54,7 @@ typedef void (*audio_output_callback)(audio_output_p ao, void* buffer, size_t si
 
 double audio_output_get_host_time();
 
-audio_output_p audio_output_create(struct decoder_output_format_t decoder_output_format);
+audio_output_p audio_output_create(struct decoder_output_format_t decoder_output_format, enum decoder_type type);
 void audio_output_destroy(audio_output_p ao);
 void audio_output_set_callback(audio_output_p ao, audio_output_callback callback, void* ctx);
 void audio_output_start(audio_output_p ao);
@@ -514,7 +514,7 @@ struct audio_queue_t* audio_queue_create(decoder_p decoder) {
     aq->flush_last_seq_no = true;
     aq->synchronization_enabled = true;
   
-    aq->output = audio_output_create(aq->output_format);
+    aq->output = audio_output_create(aq->output_format, decoder->type);
     audio_output_set_callback(aq->output, _audio_queue_output_render, aq);
     
     return aq;
@@ -783,7 +783,9 @@ void audio_queue_start(struct audio_queue_t* aq) {
     
     aq->flushed = false;
     
-    audio_output_start(aq->output);
+    if (aq->decoder->type == decoder_type_alac) {
+        audio_output_start(aq->output);
+    }
     
     mutex_unlock(aq->mutex);
     
