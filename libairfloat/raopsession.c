@@ -269,6 +269,7 @@ void _raop_session_raop_connection_request_callback(web_server_connection_p conn
     
     const char* cmd = web_request_get_command(request);
     const char* path = web_request_get_path(request);
+    printf("RAOP session %s %s\n\n", cmd, path);
     web_headers_p request_headers = web_request_get_headers(request);
     
     web_response_p response = web_response_create();
@@ -326,7 +327,6 @@ void _raop_session_raop_connection_request_callback(web_server_connection_p conn
             if (0 == strcmp(cmd, "OPTIONS"))
                 web_headers_set_value(response_headers, "Public", "ANNOUNCE, RECORD, PAUSE, FLUSH, TEARDOWN, OPTIONS, GET_PARAMETER, SET_PARAMETER, POST, GET");
             else if (0 == strcmp(cmd, "ANNOUNCE")) {
-                
                 mutex_lock(rs->mutex);
                 if (rs->dacp_client == NULL) {
                     
@@ -393,26 +393,23 @@ void _raop_session_raop_connection_request_callback(web_server_connection_p conn
                             size_t aes_key_base64_encrypted_padded_length = strlen(aes_key_base64_encrypted) + 5;
                             char aes_key_base64_encrypted_padded[aes_key_base64_encrypted_padded_length];
                             size_t size = base64_pad(aes_key_base64_encrypted, strlen(aes_key_base64_encrypted), aes_key_base64_encrypted_padded, aes_key_base64_encrypted_padded_length);
+                            unsigned char aes_key_encrypted[128] = {0};
+                            size = base64_decode(aes_key_base64_encrypted_padded, aes_key_encrypted);
                             
-                            if (size == 72) {
-                                unsigned char aes_key_encrypted[72] = {0};
-                                size = base64_decode(aes_key_base64_encrypted_padded, aes_key_encrypted);
+                            uint8_t *aes_key;
+                            
+                            if (aes_key_encrypted && size == 72) {
                                 
-                                uint8_t *aes_key;
+                                aes_key = decryptAESKey(aes_key_encrypted);
                                 
-                                if (aes_key_encrypted && size == 72) {
-                                    
-                                    aes_key = decryptAESKey(aes_key_encrypted);
-                                    
-                                    log_message(LOG_INFO, "AES key length: %d bits", size * 8);
-                                    _print_data(aes_key, 16);
-                                    
-                                    key = aes_key;
-                                    
-                                }
+                                log_message(LOG_INFO, "AES key length: %d bits", size * 8);
+                                _print_data(aes_key, 16);
+                                
+                                key = aes_key;
+                                
                             }
-                            
                         }
+                        
                         if (key != NULL) {
                             const char* aes_initializer_base64 = parameters_value_for_key(parameters, "a-aesiv");
                             size_t aes_initializer_base64_encoded_padded_length = strlen(aes_initializer_base64) + 5;
@@ -422,7 +419,9 @@ void _raop_session_raop_connection_request_callback(web_server_connection_p conn
                             size = base64_decode(aes_initializer_base64_encoded_padded, aes_initializer);
                             
                             mutex_lock(rs->mutex);
+                            printf("%s, %s", key, aes_initializer);
                             rs->crypt_aes = crypt_aes_create(key, aes_initializer, size);
+                            printf("announce\n");
                             mutex_unlock(rs->mutex);
                         }
                         

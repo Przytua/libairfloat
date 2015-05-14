@@ -119,8 +119,8 @@ struct zeroconf_raop_ad_t* zeroconf_raop_ad_create(uint16_t port, const char *na
     za->service = CFNetServiceCreate(kCFAllocatorDefault, CFSTR(""), CFSTR("_raop._tcp"), combined_name, port);
     za->port = port;
     
-    CFStringRef keys[16] = { CFSTR("txtvers"), CFSTR("et"), CFSTR("ek"), CFSTR("ss"), CFSTR("sr"), CFSTR("tp"), CFSTR("cn"), CFSTR("da"), CFSTR("sf"), CFSTR("vn"), CFSTR("md"), CFSTR("vs"), CFSTR("sv"), CFSTR("sm"), CFSTR("ch"), CFSTR("sr") };
-    CFStringRef values[16] = { CFSTR("1"), CFSTR("0,1"), CFSTR("1"), CFSTR("16"), CFSTR("44100"), CFSTR("TCP,UDP"), CFSTR("1"), CFSTR("true"), CFSTR("0x4"), CFSTR("65537"), CFSTR("0,1,2"), CFSTR("130.14"), CFSTR("false"), CFSTR("false"), CFSTR("2"), CFSTR("44100") };
+    CFStringRef keys[17] = { CFSTR("txtvers"), CFSTR("et"), CFSTR("ek"), CFSTR("ss"), CFSTR("sr"), CFSTR("tp"), CFSTR("cn"), CFSTR("da"), CFSTR("sf"), CFSTR("vn"), CFSTR("md"), CFSTR("vs"), CFSTR("sv"), CFSTR("sm"), CFSTR("ch"), CFSTR("sr"), CFSTR("pw") };
+    CFStringRef values[17] = { CFSTR("1"), CFSTR("0,3"), CFSTR("1"), CFSTR("16"), CFSTR("44100"), CFSTR("UDP"), CFSTR("0,1,2,3"), CFSTR("true"), CFSTR("0x4"), CFSTR("65537"), CFSTR("0,1,2"), CFSTR("120.2"), CFSTR("false"), CFSTR("false"), CFSTR("2"), CFSTR("44100"), CFSTR("false") };
     
     CFDictionaryRef txt_dictionary = CFDictionaryCreate(kCFAllocatorDefault, (const void**)&keys, (const void**)&values, 16, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
     CFDataRef txt_data = CFNetServiceCreateTXTDataWithDictionary(kCFAllocatorDefault, txt_dictionary);
